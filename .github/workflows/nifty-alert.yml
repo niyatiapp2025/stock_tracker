@@ -1,0 +1,44 @@
+name: NIFTY Dip Alert
+
+on:
+  schedule:
+    # Run every hour during Indian market hours (9:15 AM - 3:15 PM IST)
+    # Cron format: minute hour day month day-of-week
+    - cron: '15 9-15 * * 1-5'  # 9:15 AM to 3:15 PM, Monday to Friday
+  workflow_dispatch:  # Allow manual runs
+
+jobs:
+  nifty-alert:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy requests pytz
+        
+    - name: Run NIFTY Alert
+      env:
+        PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+        PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+      run: |
+        python nifty_dip_alert.py
+        
+    - name: Upload signals database
+      uses: actions/upload-artifact@v4
+      with:
+        name: signals-db
+        path: signals.db
+        retention-days: 30
+        
+    - name: Run Tests
+      run: |
+        python test.py
