@@ -4,7 +4,7 @@ on:
   schedule:
     # Run every hour during Indian market hours (9:15 AM - 3:15 PM IST)
     # Cron format: minute hour day month day-of-week
-    - cron: '15 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:45 AM to 9:45 AM UTC), Monday to Friday
+    - cron: '45 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:45 AM to 9:45 AM UTC), Monday to Friday
   workflow_dispatch:  # Allow manual runs
 
 jobs:
