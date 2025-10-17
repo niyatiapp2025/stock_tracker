@@ -5,6 +5,7 @@ import requests
 import datetime as dt
 import sqlite3
 import pytz
+import os
 # Removed ta library imports due to 2D array issues - using manual calculations instead
 
 # ============== CONFIG ===================
@@ -17,20 +18,36 @@ RSI_WINDOW = 30                 # smoother RSI for hourly timeframe
 VOL_AVG_WINDOW = 30             # compare current vol vs avg of last 30 bars
 DB_FILE = "signals.db"
 COOLDOWN_HOURS = 4
-PUSHOVER_TOKEN = "a7fgirz5pab2d3q5vn43zd1s113cqp"
-PUSHOVER_USER  = "uhn78axoo35a2kpxfr7zkm9yjzypcg"
+# Read from environment variables (for GitHub Actions) or use defaults (for local testing)
+ONESIGNAL_API_KEY = os.getenv("ONESIGNAL_API_KEY", "os_v2_app_flemraywrrfczap5lf54vaqxpmaclo6ceunus6mkir6nay4nyd6sd374zuwuggryxteo2udfrxzrrc4yrxxcxlyfmbm4bs6zqtmsrca")
+ONESIGNAL_APP_ID = os.getenv("ONESIGNAL_APP_ID", "2ac8c883-168c-4a2c-81fd-597bca82177b")
 TZ = pytz.timezone("Asia/Kolkata")
 # =========================================
 
-def send_pushover(title, msg):
+def send_onesignal(title, msg):
     try:
-        requests.post(
-            "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_TOKEN, "user": PUSHOVER_USER,
-                  "title": title, "message": msg}
+        headers = {
+            "content-type": "application/json; charset=utf-8",
+            "authorization": ONESIGNAL_API_KEY
+        }
+        payload = {
+            "app_id": ONESIGNAL_APP_ID,
+            "target_channel": "push",
+            "headings": {"en": title},
+            "contents": {"en": msg},
+            "included_segments": ["Total Subscriptions"]
+        }
+        response = requests.post(
+            "https://api.onesignal.com/notifications",
+            headers=headers,
+            json=payload
         )
+        if response.status_code == 200:
+            print(f"OneSignal notification sent: {title}")
+        else:
+            print(f"OneSignal error: {response.status_code} - {response.text}")
     except Exception as e:
-        print("Pushover error:", e)
+        print("OneSignal error:", e)
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -168,7 +185,7 @@ def main():
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
                    f"Vol/Avg({VOL_AVG_WINDOW}): {vol_ratio if vol_ratio else 'N/A'}")
-            send_pushover("Dip Detected", msg)
+            send_onesignal("Dip Detected 📉", msg)
         else:
             print("Dip Detected skipped (within cooldown)")
 
@@ -180,7 +197,7 @@ def main():
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
                    f"Vol/Avg({VOL_AVG_WINDOW}): {vol_ratio if vol_ratio else 'N/A'}")
-            send_pushover("Reversal Confirmed", msg)
+            send_onesignal("Reversal Confirmed 📈", msg)
         else:
             print("Reversal Confirmed skipped (within cooldown)")
 
