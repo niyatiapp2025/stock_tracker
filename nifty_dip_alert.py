@@ -115,7 +115,7 @@ def check_symbol_alerts(symbol, display_name):
     """Generic function to check dip and reversal alerts for any symbol"""
     
     # ---------- Fetch data ----------
-    data = yf.download(symbol, period=LOOKBACK, interval=INTERVAL)
+    data = yf.download(symbol, period=LOOKBACK, interval=INTERVAL, auto_adjust=True)
     if data.empty:
         print(f"No data retrieved for {display_name}.")
         return

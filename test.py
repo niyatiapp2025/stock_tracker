@@ -25,7 +25,7 @@ def test_environment():
 
 def test_data_fetch():
     print("✅ Testing data fetch and indicator calculation...")
-    data = yf.download(nda.NIFTY_SYMBOL, period="5d", interval="1h")
+    data = yf.download(nda.NIFTY_SYMBOL, period="5d", interval="1h", auto_adjust=True)
     assert not data.empty, "❌ No data fetched!"
     # Calculate Bollinger Bands manually to avoid the 2D array issue
     window = nda.BB_WINDOW
@@ -44,8 +44,8 @@ def test_data_fetch():
     data["bb_lband"] = data["bb_mavg"] - (bb_std * std_dev)
 
     print(f"Data fetched: {len(data)} candles")
-    last_close = float(data['Close'].iloc[-1])
-    last_bb_lband = float(data['bb_lband'].iloc[-1])
+    last_close = float(data['Close'].iloc[-1]) if isinstance(data['Close'].iloc[-1], (int, float)) else float(data['Close'].iloc[-1].iloc[0])
+    last_bb_lband = float(data['bb_lband'].iloc[-1]) if isinstance(data['bb_lband'].iloc[-1], (int, float)) else float(data['bb_lband'].iloc[-1].iloc[0])
     print(f"Last Close: {last_close:.2f}, Lower Band: {last_bb_lband:.2f}")
     print("Indicators computed successfully.\n")
 
@@ -68,7 +68,7 @@ def test_db_logging():
 
 def test_fake_dip():
     print("✅ Simulating fake Dip Detected event...")
-    data = yf.download(nda.NIFTY_SYMBOL, period="10d", interval="1h")
+    data = yf.download(nda.NIFTY_SYMBOL, period="10d", interval="1h", auto_adjust=True)
     data.index = data.index.tz_convert(nda.TZ)
     # Calculate Bollinger Bands manually to avoid the 2D array issue
     window = nda.BB_WINDOW
@@ -89,7 +89,8 @@ def test_fake_dip():
     fake["rsi"] = 35.0
     # Add missing Close_prev column for log_event function
     fake["Close_prev"] = data.iloc[-2]["Close"] if len(data) > 1 else fake["Close"]
-    nda.log_event("Dip Detected (TEST)", fake, fake["rsi"], 1.25)
+    # Updated to include symbol parameter
+    nda.log_event(nda.NIFTY_SYMBOL, "Dip Detected (TEST)", fake, fake["rsi"], 1.25)
     print("Fake event logged in DB. Check pushover notification manually if enabled.\n")
 
 def run_all_tests():
