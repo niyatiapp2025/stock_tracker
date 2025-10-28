@@ -10,6 +10,7 @@ import os
 
 # ============== CONFIG ===================
 NIFTY_SYMBOL = "^NSEI"          # Yahoo Finance ticker for Nifty 50
+GOLDBEES_SYMBOL = "GOLDBEES.NS" # Yahoo Finance ticker for GOLDBEES
 INTERVAL = "1h"                 # 1-hour candles
 LOOKBACK = "60d"                # pull 60 days to ensure 30-day window has full history
 BB_WINDOW = 195                 # ≈ 30 trading days × 6.5 hours/day
@@ -55,6 +56,7 @@ def init_db():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
             timestamp TEXT,
             event TEXT,
             close REAL,
@@ -68,15 +70,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-def last_event_time(event_type):
+def last_event_time(symbol, event_type):
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
-    cur.execute("SELECT timestamp FROM signals WHERE event=? ORDER BY id DESC LIMIT 1", (event_type,))
+    cur.execute("SELECT timestamp FROM signals WHERE symbol=? AND event=? ORDER BY id DESC LIMIT 1", (symbol, event_type))
     row = cur.fetchone()
     conn.close()
     return pd.to_datetime(row[0]) if row else None
 
-def log_event(event_type, row, rsi, vol_ratio):
+def log_event(symbol, event_type, row, rsi, vol_ratio):
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     # Extract scalar values for calculation
@@ -85,9 +87,10 @@ def log_event(event_type, row, rsi, vol_ratio):
     change_pct = ((close_val - close_prev_val) / close_prev_val * 100) if close_prev_val != 0 else 0.0
     
     cur.execute("""
-        INSERT INTO signals (timestamp, event, close, lower_band, rsi, vol_ratio, change_pct, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO signals (symbol, timestamp, event, close, lower_band, rsi, vol_ratio, change_pct, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        symbol,
         str(row.name),
         event_type,
         close_val,
@@ -99,22 +102,22 @@ def log_event(event_type, row, rsi, vol_ratio):
     ))
     conn.commit()
     conn.close()
-    print(f"[{event_type}] logged at {row.name}")
+    print(f"[{symbol}] [{event_type}] logged at {row.name}")
 
-def within_cooldown(event_type, timestamp):
-    last_ts = last_event_time(event_type)
+def within_cooldown(symbol, event_type, timestamp):
+    last_ts = last_event_time(symbol, event_type)
     if last_ts is None:
         return False
     diff_hours = (pd.to_datetime(timestamp) - last_ts).total_seconds() / 3600
     return diff_hours < COOLDOWN_HOURS
 
-def main():
-    init_db()
-
+def check_symbol_alerts(symbol, display_name):
+    """Generic function to check dip and reversal alerts for any symbol"""
+    
     # ---------- Fetch data ----------
-    data = yf.download(NIFTY_SYMBOL, period=LOOKBACK, interval=INTERVAL)
+    data = yf.download(symbol, period=LOOKBACK, interval=INTERVAL)
     if data.empty:
-        print("No data retrieved.")
+        print(f"No data retrieved for {display_name}.")
         return
 
     # Convert timestamps from UTC → IST
@@ -150,7 +153,7 @@ def main():
     # guard against NaN volumes
     if data["Volume"].isnull().all().item():
         data["Volume"] = np.nan
-        print("Warning: volume data missing for ^NSEI (expected for index).")
+        print(f"Warning: volume data missing for {display_name} (expected for index).")
 
     last = data.iloc[-1]
     prev = data.iloc[-2]
@@ -179,27 +182,38 @@ def main():
 
     # ---------- Stage 1: Dip Detected ----------
     if (last_close < last_bb_lband) and (last_close < last_open):
-        log_event("Dip Detected", last, last_rsi, vol_ratio)
-        if not within_cooldown("Dip Detected", ts):
-            msg = (f"NIFTY Dip Detected 📉\n"
+        log_event(symbol, "Dip Detected", last, last_rsi, vol_ratio)
+        if not within_cooldown(symbol, "Dip Detected", ts):
+            msg = (f"{display_name} Dip Detected 📉\n"
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
                    f"Vol/Avg({VOL_AVG_WINDOW}): {vol_ratio if vol_ratio else 'N/A'}")
-            send_onesignal("Dip Detected 📉", msg)
+            send_onesignal(f"{display_name} Dip Detected 📉", msg)
         else:
-            print("Dip Detected skipped (within cooldown)")
+            print(f"{display_name} Dip Detected skipped (within cooldown)")
 
     # ---------- Stage 2: Reversal Confirmed ----------
     if (last_close > last_bb_lband) and (last_close > last_open) and (prev_close < prev_bb_lband):
-        log_event("Reversal Confirmed", last, last_rsi, vol_ratio)
-        if not within_cooldown("Reversal Confirmed", ts):
-            msg = (f"NIFTY Reversal 📈\n"
+        log_event(symbol, "Reversal Confirmed", last, last_rsi, vol_ratio)
+        if not within_cooldown(symbol, "Reversal Confirmed", ts):
+            msg = (f"{display_name} Reversal 📈\n"
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
                    f"Vol/Avg({VOL_AVG_WINDOW}): {vol_ratio if vol_ratio else 'N/A'}")
-            send_onesignal("Reversal Confirmed 📈", msg)
+            send_onesignal(f"{display_name} Reversal Confirmed 📈", msg)
         else:
-            print("Reversal Confirmed skipped (within cooldown)")
+            print(f"{display_name} Reversal Confirmed skipped (within cooldown)")
+
+def main():
+    init_db()
+    
+    # Check alerts for NIFTY
+    print("\n=== Checking NIFTY alerts ===")
+    check_symbol_alerts(NIFTY_SYMBOL, "NIFTY")
+    
+    # Check alerts for GOLDBEES
+    print("\n=== Checking GOLDBEES alerts ===")
+    check_symbol_alerts(GOLDBEES_SYMBOL, "GOLDBEES")
 
 if __name__ == "__main__":
     main()
