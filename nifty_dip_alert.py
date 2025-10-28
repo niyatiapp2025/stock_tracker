@@ -81,10 +81,36 @@ def last_event_time(symbol, event_type):
 def log_event(symbol, event_type, row, rsi, vol_ratio):
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
-    # Extract scalar values for calculation
-    close_val = float(row["Close"].iloc[0])
-    close_prev_val = float(row["Close_prev"].iloc[0])
+    # Extract scalar values for calculation - handle both scalar and Series
+    def extract_float(val):
+        try:
+            # Handle simple scalar types first
+            if isinstance(val, (int, float)):
+                return 0.0 if (isinstance(val, float) and np.isnan(val)) else float(val)
+            
+            # For pandas Series, extract the raw numpy scalar
+            if isinstance(val, pd.Series):
+                if len(val) == 0:
+                    return 0.0
+                # Use .values[0] to get numpy scalar, avoiding pandas indexing
+                raw_val = val.values[0]
+                # Check if it's nan using numpy
+                if isinstance(raw_val, (float, np.floating)) and np.isnan(raw_val):
+                    return 0.0
+                return float(raw_val)
+            
+            # Fallback for other types
+            return float(val)
+        except (ValueError, TypeError, IndexError, AttributeError):
+            return 0.0
+    
+    close_val = extract_float(row["Close"])
+    close_prev_val = extract_float(row["Close_prev"])
     change_pct = ((close_val - close_prev_val) / close_prev_val * 100) if close_prev_val != 0 else 0.0
+    
+    bb_lband_val = extract_float(row["bb_lband"])
+    rsi_val = extract_float(rsi)
+    vol_ratio_val = extract_float(vol_ratio)
     
     cur.execute("""
         INSERT INTO signals (symbol, timestamp, event, close, lower_band, rsi, vol_ratio, change_pct, created_at)
@@ -94,9 +120,9 @@ def log_event(symbol, event_type, row, rsi, vol_ratio):
         str(row.name),
         event_type,
         close_val,
-        float(row["bb_lband"].iloc[0]),
-        float(rsi),
-        float(vol_ratio),
+        bb_lband_val,
+        rsi_val,
+        vol_ratio_val,
         change_pct,
         dt.datetime.now(TZ).isoformat()
     ))
@@ -176,15 +202,16 @@ def check_symbol_alerts(symbol, display_name):
     ts = last.name  # already in IST
 
     # Extract scalar values for comparison
-    last_close = float(last["Close"].iloc[0])
-    last_open = float(last["Open"].iloc[0])
-    last_bb_lband = float(last["bb_lband"].iloc[0])
-    last_bb_mid_lower = float(last["bb_mid_lower"].iloc[0])
-    last_bb_mavg = float(last["bb_mavg"].iloc[0])
-    last_rsi = float(last["rsi"].iloc[0])
-    prev_close = float(prev["Close"].iloc[0])
-    prev_bb_lband = float(prev["bb_lband"].iloc[0])
-    prev_bb_mid_lower = float(prev["bb_mid_lower"].iloc[0])
+    # Use .item() or direct access since last/prev are already Series from .iloc[-1]
+    last_close = float(last["Close"]) if isinstance(last["Close"], (int, float)) else float(last["Close"].iloc[0])
+    last_open = float(last["Open"]) if isinstance(last["Open"], (int, float)) else float(last["Open"].iloc[0])
+    last_bb_lband = float(last["bb_lband"]) if isinstance(last["bb_lband"], (int, float)) else float(last["bb_lband"].iloc[0])
+    last_bb_mid_lower = float(last["bb_mid_lower"]) if isinstance(last["bb_mid_lower"], (int, float)) else float(last["bb_mid_lower"].iloc[0])
+    last_bb_mavg = float(last["bb_mavg"]) if isinstance(last["bb_mavg"], (int, float)) else float(last["bb_mavg"].iloc[0])
+    last_rsi = float(last["rsi"]) if isinstance(last["rsi"], (int, float)) else float(last["rsi"].iloc[0])
+    prev_close = float(prev["Close"]) if isinstance(prev["Close"], (int, float)) else float(prev["Close"].iloc[0])
+    prev_bb_lband = float(prev["bb_lband"]) if isinstance(prev["bb_lband"], (int, float)) else float(prev["bb_lband"].iloc[0])
+    prev_bb_mid_lower = float(prev["bb_mid_lower"]) if isinstance(prev["bb_mid_lower"], (int, float)) else float(prev["bb_mid_lower"].iloc[0])
 
     # ---------- Stage 0: Early Warning - Price in warning zone ----------
     if (last_close < last_bb_mid_lower) and (last_close > last_bb_lband):

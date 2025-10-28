@@ -11,7 +11,6 @@ import sqlite3
 import importlib
 import pandas as pd
 import yfinance as yf
-from ta.volatility import BollingerBands
 
 # Import your main script dynamically
 nda = importlib.import_module("nifty_dip_alert")
