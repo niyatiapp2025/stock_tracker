@@ -12,8 +12,8 @@ import os
 NIFTY_SYMBOL = "^NSEI"          # Yahoo Finance ticker for Nifty 50
 GOLDBEES_SYMBOL = "GOLDBEES.NS" # Yahoo Finance ticker for GOLDBEES
 INTERVAL = "1h"                 # 1-hour candles
-LOOKBACK = "60d"                # pull 60 days to ensure 30-day window has full history
-BB_WINDOW = 195                 # ≈ 30 trading days × 6.5 hours/day
+LOOKBACK = "60d"                # pull 60 days to ensure sufficient history
+BB_WINDOW = 130                 # ≈ 30 calendar days (20 trading days × 6.5 hours/day)
 BB_STD_DEV = 2
 RSI_WINDOW = 30                 # smoother RSI for hourly timeframe
 VOL_AVG_WINDOW = 30             # compare current vol vs avg of last 30 bars
@@ -137,6 +137,8 @@ def check_symbol_alerts(symbol, display_name):
     # Calculate upper and lower bands
     data["bb_hband"] = data["bb_mavg"] + (bb_std * BB_STD_DEV)
     data["bb_lband"] = data["bb_mavg"] - (bb_std * BB_STD_DEV)
+    # Calculate midpoint between middle band and lower band (early warning level)
+    data["bb_mid_lower"] = (data["bb_mavg"] + data["bb_lband"]) / 2
 
     # Calculate RSI manually to avoid the 2D array issue
     def calculate_rsi(prices, window):
@@ -168,7 +170,8 @@ def check_symbol_alerts(symbol, display_name):
     
     vol_ratio = np.nan
     if not pd.isna(vol_avg) and vol_avg > 0:
-        vol_ratio = last["Volume"] / vol_avg
+        last_volume = float(last["Volume"].iloc[0]) if hasattr(last["Volume"], 'iloc') else float(last["Volume"])
+        vol_ratio = last_volume / vol_avg
 
     ts = last.name  # already in IST
 
@@ -176,14 +179,31 @@ def check_symbol_alerts(symbol, display_name):
     last_close = float(last["Close"].iloc[0])
     last_open = float(last["Open"].iloc[0])
     last_bb_lband = float(last["bb_lband"].iloc[0])
+    last_bb_mid_lower = float(last["bb_mid_lower"].iloc[0])
+    last_bb_mavg = float(last["bb_mavg"].iloc[0])
     last_rsi = float(last["rsi"].iloc[0])
     prev_close = float(prev["Close"].iloc[0])
     prev_bb_lband = float(prev["bb_lband"].iloc[0])
+    prev_bb_mid_lower = float(prev["bb_mid_lower"].iloc[0])
+
+    # ---------- Stage 0: Early Warning - Price in warning zone ----------
+    if (last_close < last_bb_mid_lower) and (last_close > last_bb_lband):
+        if not within_cooldown(symbol, "Dip Warning", ts):
+            log_event(symbol, "Dip Warning", last, last_rsi, vol_ratio)
+            msg = (f"{display_name} Dip Warning ⚠️\n"
+                   f"Price in warning zone\n"
+                   f"Close: {last_close:.2f}\n"
+                   f"Warning Level: {last_bb_mid_lower:.2f}\n"
+                   f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
+                   f"Vol/Avg({VOL_AVG_WINDOW}): {vol_ratio if vol_ratio else 'N/A'}")
+            send_onesignal(f"{display_name} Dip Warning ⚠️", msg)
+        else:
+            print(f"{display_name} Dip Warning skipped (within cooldown)")
 
     # ---------- Stage 1: Dip Detected ----------
     if (last_close < last_bb_lband) and (last_close < last_open):
-        log_event(symbol, "Dip Detected", last, last_rsi, vol_ratio)
         if not within_cooldown(symbol, "Dip Detected", ts):
+            log_event(symbol, "Dip Detected", last, last_rsi, vol_ratio)
             msg = (f"{display_name} Dip Detected 📉\n"
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
@@ -194,8 +214,8 @@ def check_symbol_alerts(symbol, display_name):
 
     # ---------- Stage 2: Reversal Confirmed ----------
     if (last_close > last_bb_lband) and (last_close > last_open) and (prev_close < prev_bb_lband):
-        log_event(symbol, "Reversal Confirmed", last, last_rsi, vol_ratio)
         if not within_cooldown(symbol, "Reversal Confirmed", ts):
+            log_event(symbol, "Reversal Confirmed", last, last_rsi, vol_ratio)
             msg = (f"{display_name} Reversal 📈\n"
                    f"Close: {last_close:.2f}\n"
                    f"RSI({RSI_WINDOW}): {last_rsi:.1f}\n"
