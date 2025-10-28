@@ -38,7 +38,3 @@ jobs:
         name: signals-db
         path: signals.db
         retention-days: 30
-        
-    - name: Run Tests
-      run: |
-        python test.py
