@@ -4,8 +4,9 @@ on:
   schedule:
     # Run every hour during Indian market hours (9:15 AM - 3:15 PM IST)
     # Cron format: minute hour day month day-of-week
-    # Updated: Run at :15 past each hour (9:15, 10:15, 11:15, 12:15, 1:15, 2:15, 3:15 IST)
-    - cron: '15 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:15 AM to 9:15 AM UTC), Monday to Friday
+    # IST = UTC + 5:30, so :15 IST = :45 UTC (of previous hour)
+    # To run at 9:15 AM - 3:15 PM IST, we need 3:45 AM - 9:45 AM UTC
+    - cron: '45 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:45 AM to 9:45 AM UTC), Monday to Friday
   workflow_dispatch:  # Allow manual runs
 
 jobs:
