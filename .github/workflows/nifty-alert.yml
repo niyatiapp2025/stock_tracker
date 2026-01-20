@@ -4,7 +4,8 @@ on:
   schedule:
     # Run every hour during Indian market hours (9:15 AM - 3:15 PM IST)
     # Cron format: minute hour day month day-of-week
-    - cron: '45 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:45 AM to 9:45 AM UTC), Monday to Friday
+    # Updated: Run at :15 past each hour (9:15, 10:15, 11:15, 12:15, 1:15, 2:15, 3:15 IST)
+    - cron: '15 3-9 * * 1-5'  # 9:15 AM to 3:15 PM IST (3:15 AM to 9:15 AM UTC), Monday to Friday
   workflow_dispatch:  # Allow manual runs
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install yfinance pandas numpy requests pytz ta
+        pip install yfinance pandas numpy requests pytz
         
     - name: Run Stock Alerts (NIFTY & GOLDBEES)
       env:
